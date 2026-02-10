@@ -10,7 +10,7 @@ def users_exits(username):
     if not os.path.exists(user_file):
         return False
     with open(user_file,'r') as f:
-        return any(line.startswith()(f"{username}:") for line in f)
+        return any(line.startswith(f"{username}:") for line in f)
     
 def register():
     username = input("Enter username: ")
@@ -37,8 +37,6 @@ def login():
                 return
 
     print("Login Failed")
-
-
 
 def main():
     options = {'1':register, '2':login, '3':exit}
