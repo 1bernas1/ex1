@@ -1,38 +1,38 @@
 import os
 import hashlib
 
-user_file = 'users.txt'
-consultas = 'consultas.txt'
+utilizador_ficheiro = 'utilizador_ficheiror.txt'
+consultas_ficheiro = 'consultas.txt'
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def users_exits(username):
-    if not os.path.exists(user_file):
+    if not os.path.exists(utilizador_ficheiro):
         return False
-    with open(user_file,'r') as f:
+    with open(utilizador_ficheiro,'r') as f:
         return any(line.startswith(f"{username}:") for line in f)
     
 def register():
     username = input("Enter username: ")
     if users_exits(username):
-        print("User Already Exists")
+        print("Utilizador já existe!")
         return
     password = input("Enter a new password") 
-    with open(user_file, 'a') as f:
+    with open(utilizador_ficheiro, 'a') as f:
         f.write(f"{username}:{hash_password(password)}\n")
-    print("Registration Sucessful")
+    print("Registro realizado com sucesso!")
 
 def login():
-    if not os.path.exists(user_file):
+    if not os.path.exists(utilizador_ficheiro):
         print("No users registered")
         return False
 
-    username = input("Enter username: ")
-    password = input("Enter password: ")
+    username = input("Utilizador: ")
+    password = input("Palavra-passe: ")
     hashed = hash_password(password)
 
-    with open(user_file, 'r') as f:
+    with open(utilizador_ficheiro, 'r') as f:
         for line in f:
             if line.strip() == f"{username}:{hashed}":
                 print("Login Successful\n")
@@ -54,9 +54,9 @@ def main():
             print("invalid option")
 
 def carregar_consultas():
-    consultas = []
-    if os.path.exists(consultas_file):
-        with open(consultas_file, 'r') as f:
+    consultas_ficheiro = []
+    if os.path.exists(consultas_ficheiro):
+        with open(consultas_ficheiro, 'r') as f:
             for linha in f:
                 paciente, medico, data, hora = linha.strip().split(";")
                 consultas.append({
@@ -67,9 +67,9 @@ def carregar_consultas():
                 })
     return consultas
 
-def guardar_consultas(consuoltas):
-    with open(consultas_file, 'w') as f:
-        f.write(f"{c['paciente']};{c['medico']};{c[data]};{['hora']}\n")
+def guardar_consultas(consultas):
+    with open(consultas_ficheiro, 'w') as f:
+        f.write(f"{c['paciente']};{c['medico']};{c['data']};{c['hora']}\n")
 
 def marcar_consulta():
     consultas = carregar_consultas()
