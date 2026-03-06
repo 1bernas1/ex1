@@ -77,14 +77,28 @@ def registar():
     print("Registo concluído!")
 
 def login():
-    nome = input("Nome do utilizador: ")
+    nome = input("Nome: ")
     password = input("Senha: ")
     password_hash = encriptar(password)
+
+    # Verificar utilizador
     cursor.execute("SELECT * FROM utilizadores WHERE nome=%s AND password=%s", (nome, password_hash))
     usuario = cursor.fetchone()
+
     if usuario:
-        print("Login efetuado com sucesso!\n")
+        usuario["tipo"] = "utilizador"
+        print("Login efetuado como utilizador!\n")
         return usuario
+
+    # Verificar médico
+    cursor.execute("SELECT * FROM medicos WHERE nome=%s AND password=%s", (nome, password_hash))
+    medico = cursor.fetchone()
+
+    if medico:
+        medico["tipo"] = "medico"
+        print("Login efetuado como médico!\n")
+        return medico
+
     print("Login falhou!")
     return None
 
@@ -248,6 +262,62 @@ def menu(usuario):
             disponibilidade_medico()
         elif op == "0":
             break
+        else:
+            print("Opção inválida!")
+
+#__________Menu do Médico__________
+
+def menu_medico(medico):
+
+    while True:
+
+        print(f"\nBem-vindo Dr(a). {medico['nome']}!")
+        print("\n1 - Ver consultas do médico")
+        print("2 - Consultas de hoje")
+        print("0 - Sair")
+
+        op = input("Escolha: ")
+
+        if op == "1":
+
+            cursor.execute("""
+                SELECT c.*, u.nome AS paciente
+                FROM consultas c
+                JOIN utilizadores u ON c.id_utilizador = u.id_utilizador
+                WHERE c.id_medico=%s
+            """, (medico['id_medico'],))
+
+            consultas = cursor.fetchall()
+
+            if not consultas:
+                print("Não existem consultas.")
+            else:
+                for c in consultas:
+                    data_formatada = datetime.strptime(str(c['data_consulta']), "%Y-%m-%d").strftime("%d/%m/%Y")
+                    print(f"{c['paciente']} | {data_formatada} {c['hora_consulta']} | {c['motivo_consulta']}")
+
+        elif op == "2":
+
+            hoje = datetime.now().strftime("%Y-%m-%d")
+
+            cursor.execute("""
+                SELECT c.*, u.nome AS paciente
+                FROM consultas c
+                JOIN utilizadores u ON c.id_utilizador = u.id_utilizador
+                WHERE c.id_medico=%s AND data_consulta=%s
+            """, (medico['id_medico'], hoje))
+
+            consultas = cursor.fetchall()
+
+            if not consultas:
+                print("Não existem consultas hoje.")
+            else:
+                for c in consultas:
+                    print(f"{c['hora_consulta']} - {c['paciente']}")
+
+        elif op == "0":
+            break
+
         else:
             print("Opção inválida!")
 
