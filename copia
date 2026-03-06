@@ -1,0 +1,264 @@
+#_____________Sistema de Gestão de Consultas Médicas___________
+
+import mysql.connector
+import hashlib
+import smtplib
+from email.message import EmailMessage
+from datetime import datetime
+
+#__________Conexão com MySQL___________
+
+db = mysql.connector.connect(
+    host="localhost",
+    user="root",
+    password="root",
+    database="base_de_dados_medica"
+)
+cursor = db.cursor(dictionary=True)
+
+#__________Configurações de Email___________
+
+EMAIL_REMETENTE = "alexandre.bernardo.santos@gmail.com"
+SENHA_APP = "kvvz alvc hhyq pgkl"  # Use senha de app do Gmail
+
+#__________Funções Auxiliares___________
+
+def encriptar(palavra):
+    return hashlib.sha256(palavra.encode()).hexdigest()
+
+def validar_data(data):
+    try:
+        datetime.strptime(data, "%Y-%m-%d")
+        return True
+    except:
+        return False
+
+def validar_hora(hora):
+    try:
+        datetime.strptime(hora, "%H:%M:%S")
+        return True
+    except:
+        return False
+
+def input_ou_voltar(msg):
+    valor = input(msg)
+    if valor == "0":
+        return None
+    return valor
+
+#__________Função para Enviar Notificações por Email___________
+
+def enviar_notificacao(destinatario, assunto, mensagem):
+    if not EMAIL_REMETENTE or not SENHA_APP:
+        print("Credenciais de email não configuradas.")
+        return
+
+    email = EmailMessage()
+    email['From'] = EMAIL_REMETENTE
+    email['To'] = destinatario
+    email['Subject'] = assunto
+    email.set_content(mensagem)
+
+    try:
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login(EMAIL_REMETENTE, SENHA_APP)
+            smtp.send_message(email)
+        print("Email enviado!")
+    except Exception as e:
+        print("Erro ao enviar email:", e)
+
+#_____Usuário e Autenticação___________
+
+def registar():
+    nome = input("Nome do utilizador: ")
+    email = input("Email: ")
+    idade = input("Idade: ")
+    password = input("Senha: ")
+    password_hash = encriptar(password)
+
+    #__________Inserir no MySQL____________
+
+    cursor.execute("INSERT INTO utilizadores (nome, idade, email, password) VALUES (%s,%s,%s,%s)",
+                   (nome, idade, email, password_hash))
+    db.commit()
+    print("Registo concluído!")
+
+def login():
+    nome = input("Nome do utilizador: ")
+    password = input("Senha: ")
+    password_hash = encriptar(password)
+
+    cursor.execute("SELECT * FROM utilizadores WHERE nome=%s AND password=%s", (nome, password_hash))
+    usuario = cursor.fetchone()
+    if usuario:
+        print("Login efetuado com sucesso!\n")
+        return usuario
+    print("Login falhou!")
+    return None
+
+#__________Médicos___________
+
+def listar_medicos():
+    cursor.execute("SELECT * FROM medicos")
+    medicos = cursor.fetchall()
+    for m in medicos:
+        print(f"{m['id_medico']} - {m['nome']} ({m['especialidade']})")
+    return medicos
+
+#__________Consultas___________
+
+def marcar_consulta(usuario):
+    print("\nMarcar Consulta (0 para voltar)\n")
+    paciente = input_ou_voltar("Nome do paciente: ")
+    if paciente is None: return
+
+    email = input_ou_voltar("Email do paciente: ")
+    if email is None: return
+
+    medicos = listar_medicos()
+    id_medico = input_ou_voltar("ID do médico: ")
+    if id_medico is None: return
+    id_medico = int(id_medico)
+
+    while True:
+        data = input_ou_voltar("Data (DD/MM/AAAA): ")
+        if data is None: return
+        if validar_data(data): break
+        print("Data inválida!")
+
+    while True:
+        hora = input_ou_voltar("Hora (HH:MM): ")
+        if hora is None: return
+        if validar_hora(hora): break
+        print("Hora inválida!")
+
+    motivo = input_ou_voltar("Motivo da consulta: ")
+    if motivo is None: return
+
+    #__________Verificar se médico já tem consulta nesse horário____________
+
+    cursor.execute("SELECT * FROM consultas WHERE id_medico=%s AND data_consulta=%s AND hora_consulta=%s",
+                   (id_medico, data, hora))
+    if cursor.fetchone():
+        print("Médico já ocupado nesse horário!")
+        return
+
+    #__________Inserir consulta____________
+
+    cursor.execute("INSERT INTO consultas (id_utilizador, id_medico, data_consulta, hora_consulta, motivo_consulta) VALUES (%s,%s,%s,%s,%s)",
+                   (usuario['id_utilizador'], id_medico, data, hora, motivo))
+    db.commit()
+
+    enviar_notificacao(email, "Consulta Marcada", f"Consulta marcada com Dr(a). {id_medico} em {data} às {hora}.")
+    print("Consulta marcada com sucesso!\n")
+
+def listar_consultas(usuario):
+    cursor.execute("SELECT c.*, m.nome AS nome_medico FROM consultas c JOIN medicos m ON c.id_medico = m.id_medico WHERE c.id_utilizador=%s", (usuario['id_utilizador'],))
+    consultas = cursor.fetchall()
+    if not consultas:
+        print("Sem consultas.")
+        return
+    for c in consultas:
+        print(f"{c['id_consulta']} - Dr(a). {c['nome_medico']} | {c['data_consulta']} {c['hora_consulta']} - {c['motivo_consulta']}")
+
+def cancelar_consulta(usuario):
+    listar_consultas(usuario)
+    id_consulta = input_ou_voltar("ID da consulta para cancelar: ")
+    if id_consulta is None: return
+    id_consulta = int(id_consulta)
+
+    #__________Buscar consulta____________
+
+    cursor.execute("SELECT * FROM consultas WHERE id_consulta=%s AND id_utilizador=%s", (id_consulta, usuario['id_utilizador']))
+    consulta = cursor.fetchone()
+    if not consulta:
+        print("Consulta inválida!")
+        return
+
+    cursor.execute("DELETE FROM consultas WHERE id_consulta=%s", (id_consulta,))
+    db.commit()
+    print("Consulta cancelada!")
+    enviar_notificacao(usuario['email'], "Consulta Cancelada", f"Consulta em {consulta['data_consulta']} cancelada.")
+
+def alterar_consulta(usuario):
+    listar_consultas(usuario)
+    id_consulta = input_ou_voltar("ID da consulta para alterar: ")
+    if id_consulta is None: return
+    id_consulta = int(id_consulta)
+
+    cursor.execute("SELECT * FROM consultas WHERE id_consulta=%s AND id_utilizador=%s", (id_consulta, usuario['id_utilizador']))
+    consulta = cursor.fetchone()
+    if not consulta:
+        print("Consulta inválida!")
+        return
+
+    while True:
+        nova_data = input_ou_voltar("Nova data (AAAA-MM-DD): ")
+        if nova_data is None: return
+        if validar_data(nova_data): break
+
+    while True:
+        nova_hora = input_ou_voltar("Nova hora (HH:MM:SS): ")
+        if nova_hora is None: return
+        if validar_hora(nova_hora): break
+
+    #__________Verificar se médico está livre____________
+
+    cursor.execute("SELECT * FROM consultas WHERE id_medico=%s AND data_consulta=%s AND hora_consulta=%s AND id_consulta!=%s",
+                   (consulta['id_medico'], nova_data, nova_hora, id_consulta))
+    if cursor.fetchone():
+        print("Médico ocupado nesse horário!")
+        return
+
+    cursor.execute("UPDATE consultas SET data_consulta=%s, hora_consulta=%s WHERE id_consulta=%s",
+                   (nova_data, nova_hora, id_consulta))
+    db.commit()
+    print("Consulta alterada!")
+    enviar_notificacao(usuario['email'], "Consulta Alterada", f"Nova data: {nova_data} às {nova_hora}")
+
+#__________MENU___________
+
+def menu(usuario):
+    while True:
+        print("\n1 - Marcar Consulta")
+        print("2 - Listar Consultas")
+        print("3 - Alterar Consulta")
+        print("4 - Cancelar Consulta")
+        print("0 - Logout")
+
+        op = input("Escolha: ")
+        if op == "1":
+            marcar_consulta(usuario)
+        elif op == "2":
+            listar_consultas(usuario)
+        elif op == "3":
+            alterar_consulta(usuario)
+        elif op == "4":
+            cancelar_consulta(usuario)
+        elif op == "0":
+            break
+        else:
+            print("Opção inválida!")
+
+#__________PRINCIPAL___________
+
+def principal():
+    while True:
+        print("\n1 - Registrar")
+        print("2 - Login")
+        print("3 - Sair")
+        op = input("Escolha: ")
+        if op == "1":
+            registar()
+        elif op == "2":
+            usuario = login()
+            if usuario:
+                menu(usuario)
+        elif op == "3":
+            break
+        else:
+            print("Opção inválida!")
+
+if __name__ == "__main__":
+    principal()
+
