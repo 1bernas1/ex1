@@ -1,20 +1,9 @@
-#__________Sistema de Agendamento Médico___________
-
-# ALTERAÇÕES REALIZADAS:
-# 1. Adicionada coluna 'estado' na tabela consultas (agendada, realizada, cancelada)
-# 2. Cancelar consulta agora muda estado para 'cancelada' (não apaga o registo)
-# 3. Médico pode marcar consulta como 'realizada'
-# 4. Utilizador pode listar consultas por estado (agendada / realizada / cancelada / todas)
-#
-# SQL necessário para adicionar a coluna estado (executar uma vez na base de dados):
-#   ALTER TABLE consultas
-#   ADD COLUMN estado ENUM('agendada','realizada','cancelada') NOT NULL DEFAULT 'agendada';
-
 import mysql.connector
 import hashlib
 from datetime import datetime
 import smtplib
-
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 #__________Conexão MySQL___________
 
@@ -27,17 +16,25 @@ db = mysql.connector.connect(
 
 cursor = db.cursor(dictionary=True)
 
+#__________Configuração Email___________
+
+EMAIL_REMETENTE = "alexandre.bernardo.santos@gmail.com"
+EMAIL_PASSWORD  = "yyct edkm fhjd hqlc"
+
 #__________Funções Auxiliares___________
 
+#__________Encriptar Senha__________
 def encriptar(palavra):
     return hashlib.sha256(palavra.encode()).hexdigest()
 
+#__________Input ou Voltar__________
 def input_ou_voltar(msg):
     valor = input(msg).strip()
     if valor == "0" or valor == "":
         return None
     return valor
 
+#__________Validar Data__________
 def validar_data(data):
     try:
         datetime.strptime(data, "%d/%m/%Y")
@@ -45,6 +42,7 @@ def validar_data(data):
     except ValueError:
         return False
 
+#__________Validar Hora__________
 def validar_hora(hora):
     try:
         datetime.strptime(hora, "%H:%M")
@@ -59,19 +57,19 @@ def registar():
     print("\nRegisto (0 para voltar)")
     nome = input_ou_voltar("Nome: ")
     if nome is None: return
+    email = input_ou_voltar("Email: ")
+    if email is None: return
     idade = input_ou_voltar("Idade: ")
     if idade is None or not idade.isdigit():
         print("Idade inválida!")
         return
-    email = input_ou_voltar("Email: ")
-    if email is None: return
     senha = input_ou_voltar("Senha: ")
     if senha is None: return
     password_hash = encriptar(senha)
     try:
         cursor.execute(
-            "INSERT INTO utilizadores (nome, idade, email, password) VALUES (%s, %s, %s, %s)",
-            (nome, int(idade), email, password_hash)
+            "INSERT INTO utilizadores (nome, email, idade, password) VALUES (%s, %s, %s, %s)",
+            (nome, email, int(idade), password_hash)
         )
         db.commit()
         print("Utilizador registado!")
@@ -80,6 +78,8 @@ def registar():
 
 
 #__________Login__________
+
+#__________Login Utilizador / Médico / Admin__________
 
 def login():
     print("\nLogin (0 para voltar)")
@@ -114,12 +114,16 @@ def login():
 
 #__________Admin funções sobre médicos__________
 
+#__________Criar Médico__________
+
 def criar_medico():
     print("\nCriar Médico (0 para voltar)")
     nome = input_ou_voltar("Nome: ")
     if nome is None: return
     email = input_ou_voltar("Email: ")
     if email is None: return
+    idade = input_ou_voltar("Idade: ")
+    if idade is None: return
     senha = input_ou_voltar("Senha: ")
     if senha is None: return
     especialidade = input_ou_voltar("Especialidade: ")
@@ -127,13 +131,15 @@ def criar_medico():
     senha_hash = encriptar(senha)
     try:
         cursor.execute(
-            "INSERT INTO medicos (nome,email,password,especialidade) VALUES (%s,%s,%s,%s)",
-            (nome, email, senha_hash, especialidade)
+            "INSERT INTO medicos (nome,email,idade,password,especialidade) VALUES (%s,%s,%s,%s,%s)",
+            (nome, email, int(idade), senha_hash, especialidade)
         )
         db.commit()
         print("Médico criado!")
     except Exception as e:
         print("Erro ao criar médico:", e)
+
+#__________Listar Médicos__________
 
 def listar_medicos():
     cursor.execute("SELECT * FROM medicos")
@@ -144,6 +150,8 @@ def listar_medicos():
     for m in medicos:
         print(f"{m['id_medico']} - {m['nome']} ({m['especialidade']})")
     return medicos
+
+#__________Alterar Médico__________
 
 def alterar_medico():
     medicos = listar_medicos()
@@ -168,6 +176,8 @@ def alterar_medico():
     if novo_nome == "0": return
     novo_email = input("Novo email: ").strip()
     if novo_email == "0": return
+    novo_idade = input("Nova idade: ").strip()
+    if novo_idade == "0": return
     nova_senha = input("Nova senha: ").strip()
     if nova_senha == "0": return
     nova_especialidade = input("Nova especialidade: ").strip()
@@ -175,19 +185,22 @@ def alterar_medico():
 
     if novo_nome:          medico["nome"] = novo_nome
     if novo_email:         medico["email"] = novo_email
+    if novo_idade:         medico["idade"] = int(novo_idade)
     if nova_senha:         medico["password"] = encriptar(nova_senha)
     if nova_especialidade: medico["especialidade"] = nova_especialidade
 
     try:
         cursor.execute("""
             UPDATE medicos
-            SET nome=%s, email=%s, password=%s, especialidade=%s
+            SET nome=%s, email=%s, idade=%s, password=%s, especialidade=%s
             WHERE id_medico=%s
-        """, (medico["nome"], medico["email"], medico["password"], medico["especialidade"], id_medico))
+        """, (medico["nome"], medico["email"], medico["idade"], medico["password"], medico["especialidade"], id_medico))
         db.commit()
         print("Médico alterado com sucesso!")
     except Exception as e:
         print("Erro ao alterar médico:", e)
+
+#__________Apagar Médico__________
 
 def apagar_medico():
     medicos = listar_medicos()
@@ -223,13 +236,8 @@ def apagar_medico():
 
 #__________Funções Consultas__________
 
-# ──────────────────────────────────────────────────────────────────────────────
-# ALTERADO: listar_consultas aceita filtro de estado opcional.
-#   estado=None        → mostra todas
-#   estado='agendada'  → apenas agendadas
-#   estado='realizada' → apenas realizadas
-#   estado='cancelada' → apenas canceladas
-# ──────────────────────────────────────────────────────────────────────────────
+#__________Listar Consultas Utilizador__________
+
 def listar_consultas(usuario, estado=None):
     if estado:
         cursor.execute("""
@@ -256,10 +264,7 @@ def listar_consultas(usuario, estado=None):
               f"| {c['motivo_consulta']} | [{c['estado_consulta'].upper()}]")
     return consultas
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# NOVO: submenu para o utilizador filtrar consultas por estado
-# ──────────────────────────────────────────────────────────────────────────────
+#__________Menu Listar Consultas Utilizador por Estado__________
 def menu_listar_consultas(usuario):
     while True:
         print("\nListar consultas por estado:")
@@ -277,6 +282,7 @@ def menu_listar_consultas(usuario):
         else: print("Opção inválida!")
 
 
+#__________Marcar Consulta__________
 def marcar_consulta(usuario):
     medicos = listar_medicos()
     if not medicos:
@@ -337,6 +343,36 @@ def marcar_consulta(usuario):
     consulta_id = cursor.fetchone()["id_consulta"]
 
     mensagem = f"Consulta marcada com Dr(a) {medico['nome']} em {data} às {hora}. Motivo: {motivo}"
+
+#__________Enviar Email de Confirmação__________
+
+    try:
+        msg = MIMEMultipart()
+        msg["From"]    = EMAIL_REMETENTE
+        msg["To"]      = usuario["email"]
+        msg["Subject"] = "Confirmação de Consulta Médica"
+        corpo = (
+            f"Olá {usuario['nome']},\n\n"
+            f"A sua consulta foi marcada com sucesso!\n\n"
+            f"Médico  : Dr(a) {medico['nome']}\n"
+            f"Data    : {data}\n"
+            f"Hora    : {hora}\n"
+            f"Motivo  : {motivo}\n\n"
+            f"Caso precise de cancelar ou alterar, aceda ao sistema.\n\n"
+            f"Cumprimentos,\nSistema de Agendamento Médico"
+        )
+        msg.attach(MIMEText(corpo, "plain"))
+        servidor = smtplib.SMTP("smtp.gmail.com", 587)
+        servidor.starttls()
+        servidor.login(EMAIL_REMETENTE, EMAIL_PASSWORD)
+        servidor.sendmail(EMAIL_REMETENTE, usuario["email"], msg.as_string())
+        servidor.quit()
+        print("Email de confirmação enviado!")
+    except Exception as e:
+        print("Erro ao enviar email:", e)
+
+#__________Registrar Notificação__________
+
     try:
         cursor.execute("""
             INSERT INTO notificacoes (id_utilizador, id_notificacao, mensagem, data_notificacao)
@@ -347,11 +383,8 @@ def marcar_consulta(usuario):
     except Exception as e:
         print("Erro ao registrar notificação:", e)
 
+#__________Cancelar Consulta__________
 
-# ──────────────────────────────────────────────────────────────────────────────
-# ALTERADO: cancelar_consulta muda estado para 'cancelada' (não apaga).
-#   Só é possível cancelar consultas com estado 'agendada'.
-# ──────────────────────────────────────────────────────────────────────────────
 def cancelar_consulta(usuario):
     # Mostra apenas consultas agendadas (as únicas que podem ser canceladas)
     consultas = listar_consultas(usuario, estado="agendada")
@@ -384,6 +417,8 @@ def cancelar_consulta(usuario):
     except Exception as e:
         print("Erro ao cancelar consulta:", e)
 
+
+#__________Alterar Consulta__________
 
 def alterar_consulta(usuario):
     # Só faz sentido alterar consultas agendadas
@@ -427,7 +462,8 @@ def alterar_consulta(usuario):
 
     data_mysql = data_obj.strftime("%Y-%m-%d")
 
-    # Verifica disponibilidade do médico no novo horário (ignora a própria consulta)
+#__________Verificar Disponibilidade__________
+
     cursor.execute("""
         SELECT * FROM consultas
         WHERE id_medico=%s AND data_consulta=%s AND hora_consulta=%s
@@ -448,6 +484,8 @@ def alterar_consulta(usuario):
     except Exception as e:
         print("Erro ao alterar consulta:", e)
 
+
+#__________Disponibilidade Médico__________
 
 def disponibilidade_medico():
     medicos = listar_medicos()
@@ -486,6 +524,8 @@ def disponibilidade_medico():
 
 #__________Funções Relatórios__________
 
+#__________Ver Relatórios__________
+
 def ver_relatorios(medico):
     cursor.execute("""
         SELECT r.*, u.nome AS paciente
@@ -501,6 +541,8 @@ def ver_relatorios(medico):
     for r in relatorios:
         data = datetime.strptime(str(r["data_relatorio"]), "%Y-%m-%d").strftime("%d/%m/%Y")
         print(r["id_relatorio"], r["paciente"], data, r["descricao"])
+
+#__________Adicionar Relatório__________
 
 def adicionar_relatorio(medico):
     cursor.execute("""
@@ -547,6 +589,8 @@ def adicionar_relatorio(medico):
         print("Relatório adicionado com sucesso!")
     except Exception as e:
         print("Erro ao adicionar relatório:", e)
+
+#__________Alterar Relatório__________
 
 def alterar_relatorio(medico):
     cursor.execute("""
@@ -595,10 +639,55 @@ def alterar_relatorio(medico):
     except Exception as e:
         print("Erro ao alterar relatório:", e)
 
+#__________Listar Consultas Médico__________
 
-# ──────────────────────────────────────────────────────────────────────────────
-# NOVO (médico): marcar uma consulta agendada como 'realizada'
-# ──────────────────────────────────────────────────────────────────────────────
+def listar_consultas_medico(medico, estado=None):
+    if estado:
+        cursor.execute("""
+            SELECT c.*, u.nome AS paciente
+            FROM consultas c
+            JOIN utilizadores u ON c.id_utilizador = u.id_utilizador
+            WHERE c.id_medico=%s AND c.estado_consulta=%s
+        """, (medico["id_medico"], estado))
+    else:
+        cursor.execute("""
+            SELECT c.*, u.nome AS paciente
+            FROM consultas c
+            JOIN utilizadores u ON c.id_utilizador = u.id_utilizador
+            WHERE c.id_medico=%s
+        """, (medico["id_medico"],))
+
+    consultas = cursor.fetchall()
+    if not consultas:
+        print("Nenhuma consulta encontrada!")
+        return []
+    for c in consultas:
+        data = datetime.strptime(str(c["data_consulta"]), "%Y-%m-%d").strftime("%d/%m/%Y")
+        print(f"{c['id_consulta']} | {c['paciente']} | {data} {c['hora_consulta']} "
+              f"| {c['motivo_consulta']} | [{c['estado_consulta'].upper()}]")
+    return consultas
+
+
+#__________Menu Listar Consultas Médico por Estado__________
+
+def menu_listar_consultas_medico(medico):
+    while True:
+        print("\nListar consultas por estado:")
+        print("1 Agendadas")
+        print("2 Realizadas")
+        print("3 Canceladas")
+        print("4 Todas")
+        print("0 Voltar")
+        op = input("Escolha: ").strip()
+        if   op == "1": listar_consultas_medico(medico, estado="agendada")
+        elif op == "2": listar_consultas_medico(medico, estado="realizada")
+        elif op == "3": listar_consultas_medico(medico, estado="cancelada")
+        elif op == "4": listar_consultas_medico(medico)
+        elif op == "0": break
+        else: print("Opção inválida!")
+
+#__________Marcar Consulta como Realizada__________
+
 def marcar_consulta_realizada(medico):
     cursor.execute("""
         SELECT c.*, u.nome AS paciente
@@ -645,6 +734,8 @@ def marcar_consulta_realizada(medico):
 
 #__________Menus__________
 
+#__________Menu Utilizador__________
+
 def menu_utilizador(usuario):
     while True:
         print(f"\nBem-vindo {usuario['nome']}")
@@ -663,6 +754,8 @@ def menu_utilizador(usuario):
         elif op == "0": break
         else: print("Opção inválida!")
 
+#__________Menu Médico__________
+
 def menu_medico(medico):
     while True:
         print(f"\nDr(a) {medico['nome']}")
@@ -673,26 +766,15 @@ def menu_medico(medico):
         print("5 Alterar relatório")
         print("0 Sair")
         op = input("Escolha: ").strip()
-        if op == "1":
-            cursor.execute("""
-                SELECT c.*, u.nome AS paciente
-                FROM consultas c
-                JOIN utilizadores u ON c.id_utilizador = u.id_utilizador
-                WHERE c.id_medico=%s
-            """, (medico["id_medico"],))
-            consultas = cursor.fetchall()
-            if not consultas:
-                print("Nenhuma consulta encontrada!")
-            for c in consultas:
-                data = datetime.strptime(str(c["data_consulta"]), "%Y-%m-%d").strftime("%d/%m/%Y")
-                print(f"{c['id_consulta']} | {c['paciente']} | {data} {c['hora_consulta']} "
-                      f"| {c['motivo_consulta']} | [{c['estado_consulta'].upper()}]")
-        elif op == "2": marcar_consulta_realizada(medico)  # NOVO
+        if   op == "1": menu_listar_consultas_medico(medico)  # ALTERADO: submenu de estados
+        elif op == "2": marcar_consulta_realizada(medico)
         elif op == "3": ver_relatorios(medico)
         elif op == "4": adicionar_relatorio(medico)
         elif op == "5": alterar_relatorio(medico)
         elif op == "0": break
         else: print("Opção inválida!")
+
+#__________Menu Admin__________
 
 def menu_admin(admin):
     while True:
@@ -710,6 +792,8 @@ def menu_admin(admin):
         elif op == "0": break
         else: print("Opção inválida!")
 
+
+#__________Menu Principal__________
 
 #__________Menu Principal__________
 
