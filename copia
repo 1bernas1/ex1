@@ -4,6 +4,7 @@ import smtplib
 from datetime import datetime
 from email.mime.text import MIMEText
 
+
 #__________Conexão MySQL___________
 
 db = mysql.connector.connect(
@@ -540,7 +541,6 @@ def alterar_relatorio(medico):
 #__________Marcar Consulta como Realizada__________
 def marcar_consulta_realizada(medico):
     if not listar_consultas_medico(medico, "agendada"):
-        print("Não há consultas agendadas para marcar como realizadas.")
         return
     consulta = pedir_id_consulta("ID da consulta para marcar como realizada: ",
                                   id_medico=medico["id_medico"], estado="agendada")
@@ -610,6 +610,7 @@ def menu_admin(admin):
         elif op == "4": apagar_medico()
         elif op == "0": break
         else: print("Opção inválida!")
+
 
 def principal():
     while True:
