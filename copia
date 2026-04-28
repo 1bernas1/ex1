@@ -147,10 +147,13 @@ def criar_medico():
     if senha is None: return
     esp   = input_ou_voltar("Especialidade: ")
     if esp   is None: return
+    genero = input_ou_voltar("Genero (M/F): ")
+    if genero is None: return
+    genero = genero.upper()
     try:
         cursor.execute(
-            "INSERT INTO medicos (nome,email,idade,password,especialidade) VALUES (%s,%s,%s,%s,%s)",
-            (nome, email, int(idade), encriptar(senha), esp)
+            "INSERT INTO medicos (nome,email,idade,password,especialidade,genero) VALUES (%s,%s,%s,%s,%s,%s)",
+            (nome, email, int(idade), encriptar(senha), esp, genero)
         )
         db.commit()
         print("Médico criado!")
@@ -165,7 +168,8 @@ def listar_medicos():
         print("Nenhum médico cadastrado!")
         return []
     for m in medicos:
-        print(f"{m['id_medico']} - {m['nome']} ({m['especialidade']})")
+        titulo = "Dra" if m.get("genero") == "F" else "Dr"
+        print(f"{m['id_medico']} - {titulo} {m['nome']} ({m['especialidade']})")
     return medicos
 
 #__________Pedir ID de Médico Válido__________
@@ -192,22 +196,24 @@ def alterar_medico():
     if medico is None: return
 
     novo_nome  = input("Novo nome: ").strip()
-    novo_email = input("Novo email: ").strip()
     nova_idade = input("Nova idade: ").strip()
+    novo_genero = input("Novo gênero (M/F): ").strip()
+    novo_email = input("Novo email: ").strip()
     nova_senha = input("Nova senha: ").strip()
     nova_esp   = input("Nova especialidade: ").strip()
 
     if novo_nome:  medico["nome"]         = novo_nome
-    if novo_email: medico["email"]        = novo_email
     if nova_idade: medico["idade"]        = int(nova_idade)
+    if novo_genero: medico["genero"]      = novo_genero.upper()
+    if novo_email: medico["email"]       = novo_email
     if nova_senha: medico["password"]     = encriptar(nova_senha)
     if nova_esp:   medico["especialidade"] = nova_esp
 
     try:
         cursor.execute("""
-            UPDATE medicos SET nome=%s, email=%s, idade=%s, password=%s, especialidade=%s
+            UPDATE medicos SET nome=%s, idade=%s, genero=%s, email=%s, password=%s, especialidade=%s
             WHERE id_medico=%s
-        """, (medico["nome"], medico["email"], medico["idade"],
+        """, (medico["nome"], medico["idade"], medico["genero"], medico["email"],
               medico["password"], medico["especialidade"], medico["id_medico"]))
         db.commit()
         print("Médico alterado com sucesso!")
