@@ -51,16 +51,30 @@ def pedir_data(msg):
     while True:
         data = input_ou_voltar(msg)
         if data is None: return None
-        if validar_data(data): return data
-        print("Data inválida! Use o formato DD/MM/AAAA.")
+        if not validar_data(data):
+            print("Data inválida! Use o formato DD/MM/AAAA.")
+            continue
+        data_obj = datetime.strptime(data, "%d/%m/%Y").date()
+        if data_obj < datetime.now().date():
+            print(f"Não é possível marcar consultas nesta data! Escolha uma data futura. Data atual: {datetime.now().strftime('%d/%m/%Y')}")
+            continue
+        return data
 
 #__________Pedir Hora Válida__________
-def pedir_hora(msg):
+def pedir_hora(msg, data=None):
     while True:
         hora = input_ou_voltar(msg)
         if hora is None: return None
-        if validar_hora(hora): return hora
-        print("Hora inválida! Use o formato HH:MM (00:00 a 23:59).")
+        if not validar_hora(hora):
+            print("Hora inválida! Use o formato HH:MM (00:00 a 23:59).")
+            continue
+        if data:
+            data_obj = datetime.strptime(data, "%d/%m/%Y").date()
+            hora_obj = datetime.strptime(hora, "%H:%M").time()
+            if data_obj == datetime.now().date() and hora_obj <= datetime.now().time():
+                print(f"Não é possível marcar consultas nesta hora!Escolha uma hora entre (09:00-18:00) Hora atual: {datetime.now().strftime('%H:%M')}")
+                continue
+        return hora
 
 #__________Pedir ID de Consulta Válido__________
 def pedir_id_consulta(msg, id_utilizador=None, id_medico=None, estado=None):
@@ -288,7 +302,7 @@ def marcar_consulta(usuario):
     if medico is None: return
     data = pedir_data("Data DD/MM/AAAA: ")
     if data is None: return
-    hora = pedir_hora("Hora HH:MM: ")
+    hora = pedir_hora("Hora HH:MM: ", data)
     if hora is None: return
     motivo = input_ou_voltar("Motivo: ") or ""
 
@@ -379,7 +393,7 @@ def alterar_consulta(usuario):
     if consulta is None: return
     data = pedir_data("Nova data DD/MM/AAAA: ")
     if data is None: return
-    hora = pedir_hora("Nova hora HH:MM: ")
+    hora = pedir_hora("Nova hora HH:MM: ", data)
     if hora is None: return
 
     data_mysql = datetime.strptime(data, "%d/%m/%Y").strftime("%Y-%m-%d")
@@ -617,7 +631,6 @@ def menu_admin(admin):
         elif op == "0": break
         else: print("Opção inválida!")
 
-
 def principal():
     while True:
         print("\n1 Registar")
@@ -635,4 +648,4 @@ def principal():
         else: print("Opção inválida!")
 
 if __name__ == "__main__":
-    principal()
+    principal()  
