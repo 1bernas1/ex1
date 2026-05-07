@@ -64,16 +64,34 @@ def pedir_data(msg):
 def pedir_hora(msg, data=None):
     while True:
         hora = input_ou_voltar(msg)
-        if hora is None: return None
+        if hora is None:
+            return None
+
         if not validar_hora(hora):
-            print("Hora inválida! Use o formato HH:MM (00:00 a 23:59).")
+            print("Hora inválida! Use o formato HH:MM.")
             continue
+
+        hora_obj = datetime.strptime(hora, "%H:%M").time()
+        hora_min = datetime.strptime("09:00", "%H:%M").time()
+        hora_max = datetime.strptime("18:00", "%H:%M").time()
+
+        # Verificar horário permitido
+        if not (hora_min <= hora_obj <= hora_max):
+            print("Só é possível marcar consultas entre as 09:00 e as 18:00.")
+            continue
+
+        # Verificar se a hora já passou (apenas se a data for hoje)
         if data:
             data_obj = datetime.strptime(data, "%d/%m/%Y").date()
-            hora_obj = datetime.strptime(hora, "%H:%M").time()
-            if data_obj == datetime.now().date() and hora_obj <= datetime.now().time():
-                print(f"Não é possível marcar consultas nesta hora!Escolha uma hora entre (09:00-18:00) Hora atual: {datetime.now().strftime('%H:%M')}")
+            agora = datetime.now()
+
+            if data_obj == agora.date() and hora_obj <= agora.time():
+                print(
+                    f"Não é possível marcar em horas passadas! "
+                    f"Hora atual: {agora.strftime('%H:%M')}"
+                )
                 continue
+
         return hora
 
 #__________Pedir ID de Consulta Válido__________
